@@ -1,29 +1,14 @@
-output "client_id" {
-  description = "Client (application) ID of the user-assigned identity."
-  value       = azapi_resource.this.output.properties.clientId
+output "diagnostic_setting_resource_ids" {
+  description = "Resource IDs of the diagnostic settings, by key."
+  value       = { for key, setting in azapi_resource.diagnostic_settings : key => setting.id }
 }
 
-output "federated_identity_credential_resource_ids" {
-  description = "Resource IDs of the federated identity credentials, by credential name."
-  value       = { for name, credential in module.federated_identity_credential : name => credential.resource_id }
+output "lock_resource_id" {
+  description = "Resource ID of the lock, or null without `lock`."
+  value       = try(azapi_resource.lock[0].id, null)
 }
 
-output "name" {
-  description = "Name of the user-assigned identity."
-  value       = azapi_resource.this.name
-}
-
-output "principal_id" {
-  description = "Object (principal) ID of the user-assigned identity's service principal."
-  value       = azapi_resource.this.output.properties.principalId
-}
-
-output "resource_id" {
-  description = "Resource ID of the user-assigned identity."
-  value       = azapi_resource.this.id
-}
-
-output "tenant_id" {
-  description = "Tenant ID of the user-assigned identity."
-  value       = azapi_resource.this.output.properties.tenantId
+output "role_assignment_resource_ids" {
+  description = "Resource IDs of the role assignments, by key."
+  value       = { for key, assignment in azapi_resource.role_assignments : key => assignment.id }
 }

@@ -26,3 +26,8 @@ rule "avm_provider_modtm_version_constraint" {
 rule "avm_terraform_module_source_required" {
   enabled = false # MLZ modules call each other through git sources; examples use ../../
 }
+
+rule "avm_output_resource_id_required" {
+  enabled      = true
+  module_class = "utility" # no primary resource of its own
+}
