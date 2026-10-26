@@ -1,6 +1,9 @@
-# Real Azure, no mocks: ARM_SUBSCRIPTION_ID=<test subscription> terraform test -test-directory=tests/integration
-# Proves what mocks cannot: credentials written in parallel are serialised, survive an update of the
-# identity, and the lock is removed before everything else on destroy.
+# Real Azure, no mocks: ARM_SUBSCRIPTION_ID=<test subscription> scripts/integration.sh
+# Proves what mocks cannot: the interfaces are accepted by Azure on a public IP; role assignments and
+# diagnostic settings can be removed, changed and force-replaced while the lock stays configured; a
+# caller's own child resource can be deleted under the lock through lock_dependencies, and a submodule's
+# role assignment under the parent's lock through lock_dependency; and everything is destroyed cleanly
+# (the lock first).
 
 run "setup" {
   module {
@@ -10,13 +13,15 @@ run "setup" {
 
 run "create" {
   variables {
-    name      = "id-mlz-it-${run.setup.suffix}"
-    parent_id = run.setup.resource_group_id
-    location  = run.setup.location
-    federated_identity_credentials = {
-      one   = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:one" }
-      two   = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:two" }
-      three = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:three" }
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category_group = "allLogs" }]
+        metrics               = [{ category = "AllMetrics" }]
+      }
     }
     lock = { kind = "CanNotDelete" }
     role_assignments = {
@@ -25,79 +30,23 @@ run "create" {
   }
 
   assert {
-    condition     = length(output.federated_identity_credential_resource_ids) == 3
-    error_message = "All three credentials should be created."
-  }
-  assert {
-    condition     = can(regex("^[0-9a-f-]{36}$", output.principal_id)) && can(regex("^[0-9a-f-]{36}$", output.client_id))
-    error_message = "principal_id and client_id should be read back from Azure."
+    condition     = output.lock_resource_id != null && length(output.role_assignment_resource_ids) == 1 && length(output.diagnostic_setting_resource_ids) == 1
+    error_message = "The lock, the role assignment and the diagnostic setting should be created."
   }
 }
 
-run "update_identity" {
+run "replace_child_under_lock" {
+  # The documented way to force-replace a child of a locked resource: replace the pause in the same run.
   variables {
-    name      = "id-mlz-it-${run.setup.suffix}"
-    parent_id = run.setup.resource_group_id
-    location  = run.setup.location
-    federated_identity_credentials = {
-      one   = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:one" }
-      two   = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:two" }
-      three = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:three" }
-    }
-    lock = { kind = "CanNotDelete" }
-    role_assignments = {
-      reader = { role_definition_id_or_name = "Reader", principal_id = run.setup.object_id }
-    }
-    isolation_scope = "Regional"
-    tags            = { updated = "true" } # a PUT of the identity without its credentials
-  }
-
-  assert {
-    condition     = azapi_resource.this.tags == tomap({ updated = "true" })
-    error_message = "The identity should be updated in place."
-  }
-}
-
-run "credentials_survive" {
-  module {
-    source = "./tests/integration/read"
-  }
-
-  variables {
-    credential_ids = run.update_identity.federated_identity_credential_resource_ids
-  }
-
-  assert {
-    condition     = output.subjects.two == "repo:example-org/example-repo:environment:two" && length(output.subjects) == 3
-    error_message = "The credentials should still exist after the identity was updated."
-  }
-}
-
-run "isolation_scope_set_in_azure" {
-  module {
-    source = "./tests/integration/read_identity"
-  }
-
-  variables {
-    identity_id = run.update_identity.resource_id
-  }
-
-  assert {
-    condition     = output.isolation_scope == "Regional"
-    error_message = "Azure should report the Regional isolation scope set by update_identity."
-  }
-}
-
-run "remove_credential_under_lock" {
-  # A credential is deleted while the lock stays configured: the lock is removed and created again
-  # around the change. The scope goes back to Azure's default, which must reach Azure.
-  variables {
-    name      = "id-mlz-it-${run.setup.suffix}"
-    parent_id = run.setup.resource_group_id
-    location  = run.setup.location
-    federated_identity_credentials = {
-      one = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:one" }
-      two = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:two" }
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category_group = "allLogs" }]
+        metrics               = [{ category = "AllMetrics" }]
+      }
     }
     lock = { kind = "CanNotDelete" }
     role_assignments = {
@@ -105,42 +54,173 @@ run "remove_credential_under_lock" {
     }
   }
 
-  assert {
-    condition     = keys(output.federated_identity_credential_resource_ids) == ["one", "two"] && length(azapi_resource.lock) == 1
-    error_message = "The third credential should be gone and the lock back."
-  }
-}
-
-run "isolation_scope_reset_in_azure" {
-  module {
-    source = "./tests/integration/read_identity"
-  }
-
-  variables {
-    identity_id = run.remove_credential_under_lock.resource_id
+  plan_options {
+    replace = [azapi_resource.diagnostic_settings["workspace"], time_sleep.lock_removal[0]]
   }
 
   assert {
-    condition     = output.isolation_scope == "None"
-    error_message = "Azure should report the default isolation scope again once isolation_scope is no longer set."
+    condition     = length(output.diagnostic_setting_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The diagnostic setting should be recreated and the lock back."
   }
 }
 
-run "replace_locked_identity" {
-  # A new name replaces the identity. The lock goes first and the pause is replaced with the identity,
-  # so the old identity is deleted only after the lock deletion has propagated.
+run "change_and_remove_children_under_lock" {
+  # The diagnostic setting changes to one category (recreated) and the role assignment is deleted, with
+  # the lock still configured.
   variables {
-    name      = "id-mlz-it-${run.setup.suffix}-renamed"
-    parent_id = run.setup.resource_group_id
-    location  = run.setup.location
-    federated_identity_credentials = {
-      one = { issuer = "https://token.actions.githubusercontent.com", subject = "repo:example-org/example-repo:environment:one" }
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category = "DDoSProtectionNotifications" }]
+      }
     }
     lock = { kind = "CanNotDelete" }
   }
 
   assert {
-    condition     = output.name == "id-mlz-it-${run.setup.suffix}-renamed" && azapi_resource.lock[0].parent_id == output.resource_id
-    error_message = "The identity should be replaced and locked again."
+    condition     = length(output.role_assignment_resource_ids) == 0 && length(output.diagnostic_setting_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The role assignment should be gone, the diagnostic setting changed and the lock back."
+  }
+}
+
+run "ignore_a_diagnostic_path_under_lock" {
+  # Ignoring a path changes the diagnostic setting's replacement trigger, so the setting is recreated, and
+  # the lock has to be removed around it.
+  variables {
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category = "DDoSProtectionNotifications" }]
+      }
+    }
+    lock                = { kind = "CanNotDelete" }
+    ignore_body_changes = { insights_diagnostic_settings = ["properties.logs"] }
+  }
+
+  assert {
+    condition     = length(output.diagnostic_setting_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The diagnostic setting should be recreated under the lock, and the lock back."
+  }
+}
+
+run "readonly_lock" {
+  variables {
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    lock                             = { kind = "ReadOnly" }
+  }
+
+  assert {
+    condition     = length(output.diagnostic_setting_resource_ids) == 0 && output.lock_resource_id != null
+    error_message = "The diagnostic setting should be deleted under the old lock, and the ReadOnly lock created."
+  }
+}
+
+run "children_added_under_readonly_lock" {
+  # ReadOnly also blocks creating children (ScopeLocked). New ones are created after the old pause is
+  # destroyed, so after the lock is gone: Terraform orders the creates of a destroyed resource's
+  # dependencies after that destroy.
+  variables {
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category_group = "allLogs" }]
+      }
+    }
+    lock = { kind = "ReadOnly" }
+    role_assignments = {
+      reader = { role_definition_id_or_name = "Reader", principal_id = run.setup.object_id }
+    }
+  }
+
+  assert {
+    condition     = length(output.diagnostic_setting_resource_ids) == 1 && length(output.role_assignment_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The children should be created under the ReadOnly lock, and the lock back."
+  }
+}
+
+run "caller_with_three_credentials" {
+  module {
+    source = "./tests/integration/harness"
+  }
+
+  variables {
+    credential_names  = ["one", "three", "two"]
+    location          = run.setup.location
+    resource_group_id = run.setup.resource_group_id
+    suffix            = run.setup.suffix
+  }
+
+  assert {
+    condition     = length(output.credential_names) == 3 && output.lock_resource_id != null
+    error_message = "The identity should be locked with three credentials."
+  }
+}
+
+run "caller_removes_a_credential_under_lock" {
+  module {
+    source = "./tests/integration/harness"
+  }
+
+  variables {
+    credential_names  = ["one", "two"]
+    location          = run.setup.location
+    resource_group_id = run.setup.resource_group_id
+    suffix            = run.setup.suffix
+  }
+
+  assert {
+    condition     = output.credential_names == ["one", "two"] && output.lock_resource_id != null
+    error_message = "The credential should be deleted under the lock, and the lock back."
+  }
+}
+
+
+run "submodule_with_a_role_assignment" {
+  module {
+    source = "./tests/integration/nested"
+  }
+
+  variables {
+    location               = run.setup.location
+    principal_id           = run.setup.object_id
+    resource_group_id      = run.setup.resource_group_id
+    subnet_role_assignment = true
+    suffix                 = run.setup.suffix
+  }
+
+  assert {
+    condition     = length(output.subnet_role_assignment_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The network should be locked with a role assignment on its subnet."
+  }
+}
+
+run "submodule_removes_its_role_assignment_under_the_parent_lock" {
+  # Through lock_dependency, the network's lock is removed around the change.
+  module {
+    source = "./tests/integration/nested"
+  }
+
+  variables {
+    location               = run.setup.location
+    principal_id           = run.setup.object_id
+    resource_group_id      = run.setup.resource_group_id
+    subnet_role_assignment = false
+    suffix                 = run.setup.suffix
+  }
+
+  assert {
+    condition     = length(output.subnet_role_assignment_resource_ids) == 0 && output.lock_resource_id != null
+    error_message = "The subnet's role assignment should be deleted under the network's lock, and the lock back."
   }
 }

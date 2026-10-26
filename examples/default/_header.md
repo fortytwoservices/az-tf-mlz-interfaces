@@ -1,6 +1,6 @@
 # Default example
 
-A resource group, then a user-assigned identity with two federated identity credentials for GitHub
-Actions. The two credentials are written one after the other, as Azure requires.
-
-Run it with `scripts/e2e.sh examples/default`: apply, a second plan that must be empty, destroy.
+A public IP address with all three interfaces from this module: diagnostic settings (all log category
+groups and all metrics) sent to a Log Analytics workspace, a Reader role assignment for the identity that
+runs the example, and a `CanNotDelete` lock. The second plan must be empty, and the destroy removes the
+lock first.
