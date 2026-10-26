@@ -130,7 +130,9 @@ resource "azapi_resource" "lock" {
 # replace_triggered_by the lock, whenever the resource is replaced, its diagnostic settings or role
 # assignments change (including which diagnostic settings inputs are ignored, which recreates them), or
 # the caller's lock_dependencies change: a lock also blocks deleting those (ScopeLocked). The order is
-# then lock removed, pause, changes, lock created again.
+# then lock removed, pause, changes, lock created again. New children are in that order too, which a
+# ReadOnly lock needs: Terraform orders the creates of a destroyed resource's dependencies after that
+# destroy.
 #
 # To replace a child without an input change (-replace, a tainted instance), replace this pause in the
 # same run: `-replace='module.interfaces.time_sleep.lock_removal[0]'`. A replace_triggered_by on the

@@ -40,8 +40,10 @@ What it handles, so that changes reach Azure:
   enforcing it. Because a lock blocks deleting what sits under the resource, any change to the role
   assignments, the diagnostic settings or `lock_dependencies` (the caller's own child resources)
   removes the lock, makes the change and locks again. To force-replace one of them (`-replace`), also
-  replace `module.interfaces.time_sleep.lock_removal[0]` in the same run. A `ReadOnly` lock also blocks
-  changes to the resource itself: set `lock = null`, apply your change, then lock again.
+  replace `module.interfaces.time_sleep.lock_removal[0]` in the same run. New children are created only
+  after the lock is removed, which matters under `ReadOnly`: it also blocks creating them. A `ReadOnly`
+  lock also blocks changes to the resource itself, which do not cycle it: set `lock = null`, apply your
+  change, then lock again.
 
 <!-- markdownlint-disable MD033 -->
 ## Requirements

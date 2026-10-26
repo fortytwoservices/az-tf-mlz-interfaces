@@ -108,6 +108,46 @@ run "ignore_a_diagnostic_path_under_lock" {
   }
 }
 
+run "readonly_lock" {
+  variables {
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    lock                             = { kind = "ReadOnly" }
+  }
+
+  assert {
+    condition     = length(output.diagnostic_setting_resource_ids) == 0 && output.lock_resource_id != null
+    error_message = "The diagnostic setting should be deleted under the old lock, and the ReadOnly lock created."
+  }
+}
+
+run "children_added_under_readonly_lock" {
+  # ReadOnly also blocks creating children (ScopeLocked). New ones are created after the old pause is
+  # destroyed, so after the lock is gone: Terraform orders the creates of a destroyed resource's
+  # dependencies after that destroy.
+  variables {
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category_group = "allLogs" }]
+      }
+    }
+    lock = { kind = "ReadOnly" }
+    role_assignments = {
+      reader = { role_definition_id_or_name = "Reader", principal_id = run.setup.object_id }
+    }
+  }
+
+  assert {
+    condition     = length(output.diagnostic_setting_resource_ids) == 1 && length(output.role_assignment_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The children should be created under the ReadOnly lock, and the lock back."
+  }
+}
+
 run "caller_with_three_credentials" {
   module {
     source = "./tests/integration/harness"
@@ -143,3 +183,4 @@ run "caller_removes_a_credential_under_lock" {
     error_message = "The credential should be deleted under the lock, and the lock back."
   }
 }
+
