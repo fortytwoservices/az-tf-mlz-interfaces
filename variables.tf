@@ -19,7 +19,7 @@ variable "lock_dependencies" {
   type        = map(string)
   default     = {}
   description = <<DESCRIPTION
-IDs of the calling module's own child resources under `resource_id`, by any stable key, for example `{ for key, credential in module.credential : key => credential.resource_id }`. A lock also blocks deleting them, so a change to this map recreates the lock around it: lock removed, 30-second pause, changes, lock created again. The lock is also created after them and removed before them.
+The calling module's own child resources under `resource_id`, by any stable key: their IDs, or for a child that calls this module itself (a submodule), its `lock_dependency` output, which also changes with the child's role assignments and diagnostic settings. For example `{ for key, child in module.child : key => child.lock_dependency }`. A lock also blocks deleting them, so a change to this map recreates the lock around it: lock removed, 30-second pause, changes, lock created again. The lock is also created after them and removed before them.
 DESCRIPTION
   nullable    = false
 }

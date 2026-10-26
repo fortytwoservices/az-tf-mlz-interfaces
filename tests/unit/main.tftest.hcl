@@ -37,6 +37,10 @@ run "nothing_by_default" {
     condition     = output.lock_resource_id == null && length(output.role_assignment_resource_ids) == 0 && length(output.diagnostic_setting_resource_ids) == 0
     error_message = "The outputs should be empty without inputs."
   }
+  assert {
+    condition     = length(output.lock_dependency) == 64
+    error_message = "lock_dependency should be a SHA-256 hash."
+  }
 }
 
 run "lock" {
@@ -64,6 +68,10 @@ run "lock" {
   assert {
     condition     = time_sleep.lock_removal[0].triggers.children == sha256(jsonencode([var.diagnostic_settings, var.role_assignments, []])) && time_sleep.lock_removal[0].triggers.lock_dependencies == sha256(jsonencode(var.lock_dependencies))
     error_message = "Changes to the role assignments, diagnostic settings or lock_dependencies should replace the pause, and with it the lock."
+  }
+  assert {
+    condition     = output.lock_dependency != run.nothing_by_default.lock_dependency
+    error_message = "lock_dependency should change with lock_dependencies, so a parent's lock follows grandchildren too."
   }
 }
 
@@ -146,6 +154,10 @@ run "role_assignments" {
   assert {
     condition     = alltrue([for assignment in azapi_resource.role_assignments : assignment.parent_id == var.resource_id && assignment.type == "Microsoft.Authorization/roleAssignments@2022-04-01"]) && keys(output.role_assignment_resource_ids) == ["by_name", "management_group_role", "named", "tenant_level_id"]
     error_message = "Role assignments should be created on the resource with the default type, and output by key."
+  }
+  assert {
+    condition     = output.lock_dependency != run.nothing_by_default.lock_dependency
+    error_message = "lock_dependency should change with the role assignments."
   }
 }
 
@@ -244,6 +256,10 @@ run "diagnostic_settings" {
   assert {
     condition     = keys(output.diagnostic_setting_resource_ids) == ["named", "workspace"]
     error_message = "Diagnostic setting IDs should be output by key."
+  }
+  assert {
+    condition     = output.lock_dependency != run.nothing_by_default.lock_dependency
+    error_message = "lock_dependency should change with the diagnostic settings."
   }
 }
 

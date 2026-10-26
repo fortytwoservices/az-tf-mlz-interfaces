@@ -23,6 +23,9 @@ locals {
     storage_account_resource_id              = "properties.storageAccountId"
     workspace_resource_id                    = "properties.workspaceId"
   }
+  # Changes whenever the children under the lock change, including which diagnostic settings inputs are
+  # ignored, which recreates those settings (see time_sleep.lock_removal).
+  lock_children = sha256(jsonencode([var.diagnostic_settings, var.role_assignments, local.diagnostic_setting_ignored_inputs]))
   # Inputs whose body path is ignored (the path itself, a parent or a child of it in ignore_body_changes)
   # stay out of the diagnostic settings' replacement trigger, so changing them does not reach Azure either.
   diagnostic_setting_ignored_inputs = [

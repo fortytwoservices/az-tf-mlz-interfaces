@@ -143,7 +143,7 @@ resource "time_sleep" "lock_removal" {
   destroy_duration = "30s"
   triggers = {
     resource_id       = var.resource_id
-    children          = sha256(jsonencode([var.diagnostic_settings, var.role_assignments, local.diagnostic_setting_ignored_inputs]))
+    children          = local.lock_children
     lock_dependencies = sha256(jsonencode(var.lock_dependencies))
   }
 

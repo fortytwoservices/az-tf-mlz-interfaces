@@ -16,7 +16,7 @@ module "interfaces" {
   lock                             = var.lock
   role_assignments                 = var.role_assignments
   diagnostic_settings              = var.diagnostic_settings
-  lock_dependencies                = { for key, child in module.child : key => child.resource_id }
+  lock_dependencies                = { for key, child in module.child : key => child.lock_dependency }
   resource_types                   = var.resource_types # its three interface keys are read
   ignore_body_changes              = var.ignore_body_changes
   retry                            = var.retry
@@ -36,9 +36,11 @@ What it handles, so that changes reach Azure:
   which inputs are ignored recreates the setting once.
 - **The lock** is created last and removed first, followed by a 30-second pause while Azure stops
   enforcing it. Because a lock blocks deleting what sits under the resource, any change to the role
-  assignments, the diagnostic settings or `lock_dependencies` (the caller's own child resources)
-  removes the lock, makes the change and locks again. To force-replace one of them (`-replace`), also
-  replace `module.interfaces.time_sleep.lock_removal[0]` in the same run. New children are created only
-  after the lock is removed, which matters under `ReadOnly`: it also blocks creating them. A `ReadOnly`
-  lock also blocks changes to the resource itself, which do not cycle it: set `lock = null`, apply your
-  change, then lock again.
+  assignments, the diagnostic settings or `lock_dependencies` (the caller's own child resources) removes
+  the lock, makes the change and locks again. Azure applies the lock to the children's own interfaces
+  too, so a submodule that calls this module outputs its `lock_dependency`, and the parent passes that
+  in `lock_dependencies` (the child's ID is enough for a child without interfaces). To force-replace one
+  of them (`-replace`), also replace `module.interfaces.time_sleep.lock_removal[0]` in the same run. New
+  children are created only after the lock is removed, which matters under `ReadOnly`: it also blocks
+  creating them. A `ReadOnly` lock also blocks changes to the resource itself, which do not cycle it:
+  set `lock = null`, apply your change, then lock again.

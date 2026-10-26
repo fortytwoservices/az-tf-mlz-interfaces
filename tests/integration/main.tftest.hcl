@@ -1,8 +1,9 @@
 # Real Azure, no mocks: ARM_SUBSCRIPTION_ID=<test subscription> scripts/integration.sh
 # Proves what mocks cannot: the interfaces are accepted by Azure on a public IP; role assignments and
 # diagnostic settings can be removed, changed and force-replaced while the lock stays configured; a
-# caller's own child resource can be deleted under the lock through lock_dependencies; and everything is
-# destroyed cleanly (the lock first).
+# caller's own child resource can be deleted under the lock through lock_dependencies, and a submodule's
+# role assignment under the parent's lock through lock_dependency; and everything is destroyed cleanly
+# (the lock first).
 
 run "setup" {
   module {
@@ -184,3 +185,42 @@ run "caller_removes_a_credential_under_lock" {
   }
 }
 
+
+run "submodule_with_a_role_assignment" {
+  module {
+    source = "./tests/integration/nested"
+  }
+
+  variables {
+    location               = run.setup.location
+    principal_id           = run.setup.object_id
+    resource_group_id      = run.setup.resource_group_id
+    subnet_role_assignment = true
+    suffix                 = run.setup.suffix
+  }
+
+  assert {
+    condition     = length(output.subnet_role_assignment_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The network should be locked with a role assignment on its subnet."
+  }
+}
+
+run "submodule_removes_its_role_assignment_under_the_parent_lock" {
+  # Through lock_dependency, the network's lock is removed around the change.
+  module {
+    source = "./tests/integration/nested"
+  }
+
+  variables {
+    location               = run.setup.location
+    principal_id           = run.setup.object_id
+    resource_group_id      = run.setup.resource_group_id
+    subnet_role_assignment = false
+    suffix                 = run.setup.suffix
+  }
+
+  assert {
+    condition     = length(output.subnet_role_assignment_resource_ids) == 0 && output.lock_resource_id != null
+    error_message = "The subnet's role assignment should be deleted under the network's lock, and the lock back."
+  }
+}
