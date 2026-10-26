@@ -10,7 +10,7 @@ variable "resource_id" {
   nullable    = false
 
   validation {
-    condition     = can(regex("^/(subscriptions|providers)/", var.resource_id))
+    condition     = can(regex("(?i)^/(subscriptions|providers)/", var.resource_id))
     error_message = "`resource_id` must be an Azure resource ID, starting with /subscriptions/ or /providers/."
   }
 }

@@ -169,6 +169,40 @@ run "role_assignments_outside_a_subscription" {
   }
 }
 
+run "resource_id_in_other_casing" {
+  command = apply
+
+  variables {
+    resource_id = "/Subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Network/publicIPAddresses/pip-test"
+    role_assignments = {
+      tenant_level_id = {
+        role_definition_id_or_name = "/providers/Microsoft.Authorization/roleDefinitions/acdd72a7-3385-48ef-bd42-f606fba81ae7"
+        principal_id               = "55555555-5555-5555-5555-555555555555"
+      }
+    }
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignments["tenant_level_id"].body.properties.roleDefinitionId == "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/acdd72a7-3385-48ef-bd42-f606fba81ae7"
+    error_message = "Resource IDs are case-insensitive: /Subscriptions/ should be accepted and its subscription used."
+  }
+}
+
+run "unknown_role_name" {
+  command = plan
+
+  variables {
+    role_assignments = {
+      reader = {
+        role_definition_id_or_name = "Readr"
+        principal_id               = "55555555-5555-5555-5555-555555555555"
+      }
+    }
+  }
+
+  expect_failures = [azapi_resource.role_assignments]
+}
+
 run "diagnostic_settings" {
   command = apply
 
@@ -210,6 +244,31 @@ run "diagnostic_settings" {
   assert {
     condition     = keys(output.diagnostic_setting_resource_ids) == ["named", "workspace"]
     error_message = "Diagnostic setting IDs should be output by key."
+  }
+}
+
+run "diagnostic_settings_ignored_paths" {
+  command = apply
+
+  variables {
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/log-test"
+        logs                  = [{ category_group = "allLogs" }]
+      }
+    }
+    ignore_body_changes = {
+      insights_diagnostic_settings = ["properties.logs", "properties.workspaceId.unused"]
+    }
+  }
+
+  assert {
+    condition     = !contains(keys(azapi_resource.diagnostic_settings["workspace"].replace_triggers_external_values), "logs") && !contains(keys(azapi_resource.diagnostic_settings["workspace"].replace_triggers_external_values), "workspace_resource_id")
+    error_message = "Inputs at an ignored body path, or under or above one, should not recreate the setting."
+  }
+  assert {
+    condition     = contains(keys(azapi_resource.diagnostic_settings["workspace"].replace_triggers_external_values), "metrics") && contains(keys(azapi_resource.diagnostic_settings["workspace"].replace_triggers_external_values), "name")
+    error_message = "The other inputs should still recreate the setting."
   }
 }
 

@@ -30,11 +30,11 @@ What it handles, so that changes reach Azure:
 
 - **Role assignments** are replaced when the principal, role, delegated identity, condition, condition
   version, description or an explicit name changes (Azure cannot update them in place). Role names are
-  resolved in `role_assignment_definition_scope`; tenant-level role definition IDs are qualified with the
-  subscription, as Azure returns them.
+  resolved in `role_assignment_definition_scope`, and a name not found there fails the plan; tenant-level
+  role definition IDs are qualified with the subscription, as Azure returns them.
 - **Diagnostic settings** match log entries by category and ignore the disabled categories Azure adds,
   so the next plan is clean; any change to a setting recreates it, so removed destinations and
-  categories really go.
+  categories really go. Inputs at a path in `ignore_body_changes` are left out of that.
 - **The lock** is created last and removed first, followed by a 30-second pause while Azure stops
   enforcing it. Because a lock blocks deleting what sits under the resource, any change to the role
   assignments, the diagnostic settings or `lock_dependencies` (the caller's own child resources)

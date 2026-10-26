@@ -28,10 +28,13 @@ resource "azapi_resource" "diagnostic_settings" {
     "properties.metrics" = "category"
   }
   # A removed destination (a null that ignore_null_property drops) or a removed log category (an ignored
-  # extra item) would not reach Azure, so any change recreates the setting.
-  replace_triggers_external_values = var.diagnostic_settings[each.key]
-  response_export_values           = []
-  retry                            = var.retry
+  # extra item) would not reach Azure, so any change recreates the setting, except at ignored body paths.
+  replace_triggers_external_values = {
+    for input, value in var.diagnostic_settings[each.key] : input => value
+    if !contains(local.diagnostic_setting_ignored_inputs, input)
+  }
+  response_export_values = []
+  retry                  = var.retry
 
   dynamic "timeouts" {
     for_each = var.timeouts == null ? [] : [var.timeouts]
@@ -82,6 +85,13 @@ resource "azapi_resource" "role_assignments" {
 
   lifecycle {
     ignore_changes = [name] # random UUID names; keeps imported names stable
+
+    # A role name not found in the lookup scope is passed through as it is, and Azure would only reject
+    # it during apply.
+    precondition {
+      condition     = startswith(each.value.body.properties.roleDefinitionId, "/")
+      error_message = "role_assignments.${each.key}: `${var.role_assignments[each.key].role_definition_id_or_name}` is not a role definition ID, and no role of that name exists in ${coalesce(var.role_assignment_definition_scope, var.resource_id)}."
+    }
   }
 }
 
