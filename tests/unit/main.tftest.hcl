@@ -62,7 +62,7 @@ run "lock" {
     error_message = "A lock should come with the 30s removal pause, replaced with the resource."
   }
   assert {
-    condition     = time_sleep.lock_removal[0].triggers.children == sha256(jsonencode([var.diagnostic_settings, var.role_assignments])) && time_sleep.lock_removal[0].triggers.lock_dependencies == sha256(jsonencode(var.lock_dependencies))
+    condition     = time_sleep.lock_removal[0].triggers.children == sha256(jsonencode([var.diagnostic_settings, var.role_assignments, []])) && time_sleep.lock_removal[0].triggers.lock_dependencies == sha256(jsonencode(var.lock_dependencies))
     error_message = "Changes to the role assignments, diagnostic settings or lock_dependencies should replace the pause, and with it the lock."
   }
 }
@@ -260,6 +260,7 @@ run "diagnostic_settings_ignored_paths" {
     ignore_body_changes = {
       insights_diagnostic_settings = ["properties.logs", "properties.workspaceId.unused"]
     }
+    lock = { kind = "CanNotDelete" }
   }
 
   assert {
@@ -269,6 +270,10 @@ run "diagnostic_settings_ignored_paths" {
   assert {
     condition     = contains(keys(azapi_resource.diagnostic_settings["workspace"].replace_triggers_external_values), "metrics") && contains(keys(azapi_resource.diagnostic_settings["workspace"].replace_triggers_external_values), "name")
     error_message = "The other inputs should still recreate the setting."
+  }
+  assert {
+    condition     = time_sleep.lock_removal[0].triggers.children == sha256(jsonencode([var.diagnostic_settings, var.role_assignments, ["logs", "workspace_resource_id"]]))
+    error_message = "Ignoring inputs changes the setting's replacement trigger, so it should cycle the lock too."
   }
 }
 

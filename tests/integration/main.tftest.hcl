@@ -85,6 +85,29 @@ run "change_and_remove_children_under_lock" {
   }
 }
 
+run "ignore_a_diagnostic_path_under_lock" {
+  # Ignoring a path changes the diagnostic setting's replacement trigger, so the setting is recreated, and
+  # the lock has to be removed around it.
+  variables {
+    resource_id                      = run.setup.public_ip_address_id
+    location                         = run.setup.location
+    role_assignment_definition_scope = run.setup.resource_group_id
+    diagnostic_settings = {
+      workspace = {
+        workspace_resource_id = run.setup.workspace_id
+        logs                  = [{ category = "DDoSProtectionNotifications" }]
+      }
+    }
+    lock                = { kind = "CanNotDelete" }
+    ignore_body_changes = { insights_diagnostic_settings = ["properties.logs"] }
+  }
+
+  assert {
+    condition     = length(output.diagnostic_setting_resource_ids) == 1 && output.lock_resource_id != null
+    error_message = "The diagnostic setting should be recreated under the lock, and the lock back."
+  }
+}
+
 run "caller_with_three_credentials" {
   module {
     source = "./tests/integration/harness"

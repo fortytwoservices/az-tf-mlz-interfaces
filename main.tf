@@ -128,8 +128,9 @@ resource "azapi_resource" "lock" {
 # Azure keeps enforcing a deleted lock for a few seconds. Destroyed after the lock and before everything
 # else, this pause lets the deletion propagate first. Its triggers replace it, and through
 # replace_triggered_by the lock, whenever the resource is replaced, its diagnostic settings or role
-# assignments change, or the caller's lock_dependencies change: a lock also blocks deleting those
-# (ScopeLocked). The order is then lock removed, pause, changes, lock created again.
+# assignments change (including which diagnostic settings inputs are ignored, which recreates them), or
+# the caller's lock_dependencies change: a lock also blocks deleting those (ScopeLocked). The order is
+# then lock removed, pause, changes, lock created again.
 #
 # To replace a child without an input change (-replace, a tainted instance), replace this pause in the
 # same run: `-replace='module.interfaces.time_sleep.lock_removal[0]'`. A replace_triggered_by on the
@@ -140,7 +141,7 @@ resource "time_sleep" "lock_removal" {
   destroy_duration = "30s"
   triggers = {
     resource_id       = var.resource_id
-    children          = sha256(jsonencode([var.diagnostic_settings, var.role_assignments]))
+    children          = sha256(jsonencode([var.diagnostic_settings, var.role_assignments, local.diagnostic_setting_ignored_inputs]))
     lock_dependencies = sha256(jsonencode(var.lock_dependencies))
   }
 
