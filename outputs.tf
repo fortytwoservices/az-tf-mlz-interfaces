@@ -4,7 +4,7 @@ output "diagnostic_setting_resource_ids" {
 }
 
 output "lock_dependency" {
-  description = "Changes whenever the resource, these interfaces or `lock_dependencies` change. A submodule outputs it, and its parent passes it in the parent's own `lock_dependencies`: Azure applies the parent's lock to these interfaces too, so it has to be removed around their changes."
+  description = "Changes whenever the resource, these interfaces or `lock_dependencies` change. A submodule hashes it with its own ID and body into its `lock_dependency` output, which the parent passes in its own `lock_dependencies`: Azure applies the parent's lock to these interfaces too, so it has to be removed around their changes."
   value = sha256(jsonencode([
     var.resource_id,
     local.lock_children,
