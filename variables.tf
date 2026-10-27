@@ -19,7 +19,7 @@ variable "lock_dependencies" {
   type        = map(string)
   default     = {}
   description = <<DESCRIPTION
-The calling module's own child resources under `resource_id`, by any stable key: their IDs, or for a child that calls this module itself (a submodule), its `lock_dependency` output, which also changes with the child's role assignments and diagnostic settings. For example `{ for key, child in module.child : key => child.lock_dependency }`. A lock also blocks deleting them, so a change to this map recreates the lock around it: lock removed, 30-second pause, changes, lock created again. The lock is also created after them and removed before them.
+The calling module's own child resources under `resource_id`, by any stable key, as values that change whenever a child is created, replaced or changed. Azure applies the lock to them too: it blocks deleting them, and a `ReadOnly` lock also blocks updating them in place, which keeps their IDs. So each submodule outputs a `lock_dependency`, a hash of its ID and body (plus, if it calls this module, this module's `lock_dependency` output), and the parent passes `{ for key, child in module.child : key => child.lock_dependency }`. A bare ID covers only deletes and replacements. A change to this map recreates the lock around it: lock removed, 30-second pause, changes, lock created again. The lock is also created after them and removed before them.
 DESCRIPTION
   nullable    = false
 }

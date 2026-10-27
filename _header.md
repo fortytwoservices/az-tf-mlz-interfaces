@@ -37,9 +37,18 @@ What it handles, so that changes reach Azure:
 - **The lock** is created last and removed first, followed by a 30-second pause while Azure stops
   enforcing it. Because a lock blocks deleting what sits under the resource, any change to the role
   assignments, the diagnostic settings or `lock_dependencies` (the caller's own child resources) removes
-  the lock, makes the change and locks again. Azure applies the lock to the children's own interfaces
-  too, so a submodule that calls this module outputs its `lock_dependency`, and the parent passes that
-  in `lock_dependencies` (the child's ID is enough for a child without interfaces). To force-replace one
+  the lock, makes the change and locks again. Azure applies the lock to the children and their own
+  interfaces too, and a `ReadOnly` lock also blocks updating a child in place, which keeps its ID. So
+  every submodule outputs a `lock_dependency` that changes with its ID and body, plus this module's
+  `lock_dependency` output if it calls this module:
+
+  ```hcl
+  output "lock_dependency" {
+    value = sha256(jsonencode([azapi_resource.this.id, azapi_resource.this.body, module.interfaces.lock_dependency]))
+  }
+  ```
+
+  The parent passes it in `lock_dependencies`; a bare ID covers only deletes and replacements. To force-replace one
   of them (`-replace`), also replace `module.interfaces.time_sleep.lock_removal[0]` in the same run. New
   children are created only after the lock is removed, which matters under `ReadOnly`: it also blocks
   creating them. A `ReadOnly` lock also blocks changes to the resource itself, which do not cycle it:

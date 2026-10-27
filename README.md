@@ -39,9 +39,18 @@ What it handles, so that changes reach Azure:
 - **The lock** is created last and removed first, followed by a 30-second pause while Azure stops
   enforcing it. Because a lock blocks deleting what sits under the resource, any change to the role
   assignments, the diagnostic settings or `lock_dependencies` (the caller's own child resources) removes
-  the lock, makes the change and locks again. Azure applies the lock to the children's own interfaces
-  too, so a submodule that calls this module outputs its `lock_dependency`, and the parent passes that
-  in `lock_dependencies` (the child's ID is enough for a child without interfaces). To force-replace one
+  the lock, makes the change and locks again. Azure applies the lock to the children and their own
+  interfaces too, and a `ReadOnly` lock also blocks updating a child in place, which keeps its ID. So
+  every submodule outputs a `lock_dependency` that changes with its ID and body, plus this module's
+  `lock_dependency` output if it calls this module:
+
+  ```hcl
+  output "lock_dependency" {
+    value = sha256(jsonencode([azapi_resource.this.id, azapi_resource.this.body, module.interfaces.lock_dependency]))
+  }
+  ```
+
+  The parent passes it in `lock_dependencies`; a bare ID covers only deletes and replacements. To force-replace one
   of them (`-replace`), also replace `module.interfaces.time_sleep.lock_removal[0]` in the same run. New
   children are created only after the lock is removed, which matters under `ReadOnly`: it also blocks
   creating them. A `ReadOnly` lock also blocks changes to the resource itself, which do not cycle it:
@@ -188,7 +197,7 @@ Default: `null`
 
 ### <a name="input_lock_dependencies"></a> [lock\_dependencies](#input\_lock\_dependencies)
 
-Description: The calling module's own child resources under `resource_id`, by any stable key: their IDs, or for a child that calls this module itself (a submodule), its `lock_dependency` output, which also changes with the child's role assignments and diagnostic settings. For example `{ for key, child in module.child : key => child.lock_dependency }`. A lock also blocks deleting them, so a change to this map recreates the lock around it: lock removed, 30-second pause, changes, lock created again. The lock is also created after them and removed before them.
+Description: The calling module's own child resources under `resource_id`, by any stable key, as values that change whenever a child is created, replaced or changed. Azure applies the lock to them too: it blocks deleting them, and a `ReadOnly` lock also blocks updating them in place, which keeps their IDs. So each submodule outputs a `lock_dependency`, a hash of its ID and body (plus, if it calls this module, this module's `lock_dependency` output), and the parent passes `{ for key, child in module.child : key => child.lock_dependency }`. A bare ID covers only deletes and replacements. A change to this map recreates the lock around it: lock removed, 30-second pause, changes, lock created again. The lock is also created after them and removed before them.
 
 Type: `map(string)`
 
@@ -310,7 +319,7 @@ Description: Resource IDs of the diagnostic settings, by key.
 
 ### <a name="output_lock_dependency"></a> [lock\_dependency](#output\_lock\_dependency)
 
-Description: Changes whenever the resource, these interfaces or `lock_dependencies` change. A submodule outputs it, and its parent passes it in the parent's own `lock_dependencies`: Azure applies the parent's lock to these interfaces too, so it has to be removed around their changes.
+Description: Changes whenever the resource, these interfaces or `lock_dependencies` change. A submodule hashes it with its own ID and body into its `lock_dependency` output, which the parent passes in its own `lock_dependencies`: Azure applies the parent's lock to these interfaces too, so it has to be removed around their changes.
 
 ### <a name="output_lock_resource_id"></a> [lock\_resource\_id](#output\_lock\_resource\_id)
 
