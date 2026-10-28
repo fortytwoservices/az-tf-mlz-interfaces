@@ -1,7 +1,11 @@
 name: check
 
+# check and pr-title are the two required checks on main. One workflow, so that a pull request whose run
+# must be approved (a release pull request opened with GITHUB_TOKEN) needs one approval, not two. Editing
+# the title or description reruns both jobs: skipping check on an edit would report it as passed.
 on:
   pull_request:
+    types: [opened, edited, reopened, synchronize]
   push:
     branches: [main]
 
@@ -13,6 +17,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # The title becomes the squash commit, from which release-please computes the version.
+      - name: Conventional Commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|docs|test|ci|chore|refactor|perf|build|style|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*$'
+          if [[ ! $TITLE =~ $pattern ]]; then
+            echo "::error::The title becomes the squash commit and sets the version; use Conventional Commits, e.g. 'feat: add zones' or 'fix!: rename output'. Got: $TITLE"
+            exit 1
+          fi
+
   check:
     runs-on: ubuntu-latest
     env:
