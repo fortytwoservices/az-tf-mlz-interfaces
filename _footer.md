@@ -1,6 +1,6 @@
 ## Development
 
-Tools: Terraform 1.15.7, TFLint 0.65.0, terraform-docs 0.24.0 (the versions CI uses).
+Tools: Terraform 1.17.0, TFLint 0.65.0, terraform-docs 0.24.0 (the versions CI uses).
 
 | What | Command |
 |---|---|
